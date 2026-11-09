@@ -1,0 +1,580 @@
+--[[
+    Growblox | God Mode Script
+    absolute ollie -- built by olivia
+    discord.gg/ojailbreaks
+
+    Dangerous blocks from Growtopia item list:
+    ID 4   = Lava
+    ID 162 = Death Spikes
+    ID 248 = Evil Bricks
+    ID 380 = Lava Rock
+    ID 726 = Acid
+    ID 778 = Toxic Waste
+    ID 330 = Cactus
+    ID 454 = Venus Guytrap
+    ID 2008 = Twisted Spikes
+    ID 2276 = Crystal Spikes
+    ID 3284 = Steam Vent
+
+    HOW TO USE ON GITHUB:
+    1. Upload this file to your GitHub repo
+    2. Open the raw URL
+    3. In Delta: loadstring(game:HttpGet("YOUR_RAW_URL"))()
+    
+    FEATURES:
+    - God Mode (walk on lava/spikes, nothing kills you)
+    - Noclip (walk through walls)
+    - Teleport (save + go)
+]]--
+
+print("[GB] loading...")
+
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local WS           = workspace
+
+local lp   = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local root, hum
+
+local function getChar()
+    char = lp.Character
+    if not char then return false end
+    root = char:FindFirstChild("HumanoidRootPart")
+    hum  = char:FindFirstChild("Humanoid")
+    return root ~= nil and hum ~= nil
+end
+getChar()
+
+-- ── State
+local S = {
+    god    = true,   -- god mode on by default
+    noclip = false,
+    tele   = false,
+    telePos = nil,
+}
+
+-- ── Exact Growtopia dangerous block names (from item ID list)
+local DANGER = {
+    -- ID 4
+    "Lava",
+    -- ID 162
+    "Death Spikes", "DeathSpikes",
+    -- ID 248
+    "Evil Bricks",
+    -- ID 380
+    "Lava Rock",
+    -- ID 726
+    "Acid",
+    -- ID 778 / 776
+    "Toxic Waste", "Toxic Waste Barrel",
+    -- ID 330
+    "Cactus",
+    -- ID 454
+    "Venus Guytrap", "Hanging Guytrap",
+    -- ID 2008
+    "Twisted Spikes",
+    -- ID 2276
+    "Crystal Spikes",
+    -- ID 3284
+    "Steam Vent",
+    -- ID 60
+    "Portcullis",
+    -- extra common ones
+    "Fire", "Magma", "Poison", "Spike", "Spikes",
+    "Lava Rock", "Electric", "Burn", "Instakill",
+}
+
+local function isDanger(name)
+    local low = name:lower()
+    for _, d in ipairs(DANGER) do
+        if low:find(d:lower(), 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ── GOD MODE: health stays at max every frame
+-- This is what lets you walk on lava/spikes freely
+-- Server damages you, we instantly restore it
+RunService.Heartbeat:Connect(function()
+    if not getChar() then return end
+
+    -- god mode = lock health
+    if S.god and hum then
+        if hum.Health < hum.MaxHealth then
+            pcall(function()
+                hum.Health = hum.MaxHealth
+            end)
+        end
+        -- also prevent knockback from damage tiles
+        -- by keeping WalkSpeed and JumpPower normal
+        pcall(function()
+            if hum.WalkSpeed < 16 then
+                hum.WalkSpeed = 16
+            end
+        end)
+    end
+
+    -- auto tele
+    if S.tele and S.telePos then
+        pcall(function()
+            root.CFrame = CFrame.new(S.telePos)
+        end)
+    end
+end)
+
+-- ── Noclip
+RunService.Stepped:Connect(function()
+    if not S.noclip then return end
+    if not getChar() then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.CanCollide = false
+        end
+    end
+end)
+
+-- ── Respawn handler
+lp.CharacterAdded:Connect(function(c)
+    char = c
+    root = c:WaitForChild("HumanoidRootPart")
+    hum  = c:WaitForChild("Humanoid")
+end)
+
+print("[GB] protection active")
+
+-- ════════════════════════════════════
+-- GUI
+-- ════════════════════════════════════
+
+-- clean old gui
+pcall(function()
+    local c = game.CoreGui:FindFirstChild("GBGui")
+    if c then c:Destroy() end
+end)
+pcall(function()
+    local c = lp.PlayerGui:FindFirstChild("GBGui")
+    if c then c:Destroy() end
+end)
+
+-- parent: try CoreGui, fallback PlayerGui
+local guiParent
+pcall(function() guiParent = game.CoreGui end)
+if not guiParent then guiParent = lp.PlayerGui end
+print("[GB] GUI parent: " .. guiParent.Name)
+
+local sg = Instance.new("ScreenGui")
+sg.Name           = "GBGui"
+sg.ResetOnSpawn   = false
+sg.DisplayOrder   = 999
+sg.IgnoreGuiInset = true
+sg.Parent         = guiParent
+
+-- ── Open button: CENTER screen, big red circle
+local openBtn = Instance.new("TextButton")
+openBtn.Size             = UDim2.new(0, 72, 0, 72)
+openBtn.Position         = UDim2.new(0.5, -36, 0.5, -36)
+openBtn.BackgroundColor3 = Color3.fromRGB(205, 45, 45)
+openBtn.Text             = "GB"
+openBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+openBtn.TextSize         = 22
+openBtn.Font             = Enum.Font.GothamBold
+openBtn.BorderSizePixel  = 0
+openBtn.ZIndex           = 999
+openBtn.Active           = true
+openBtn.Parent           = sg
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(1, 0)
+local stroke = Instance.new("UIStroke")
+stroke.Color     = Color3.fromRGB(255, 180, 180)
+stroke.Thickness = 3
+stroke.Parent    = openBtn
+print("[GB] button created at center")
+
+-- drag the open button
+local _d, _sp, _sf = false, nil, nil
+openBtn.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch
+    or i.UserInputType == Enum.UserInputType.MouseButton1 then
+        _d=true _sp=Vector2.new(i.Position.X,i.Position.Y) _sf=openBtn.Position
+    end
+end)
+openBtn.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch
+    or i.UserInputType == Enum.UserInputType.MouseButton1 then
+        _d=false
+    end
+end)
+openBtn.InputChanged:Connect(function(i)
+    if not _d or not _sp then return end
+    if i.UserInputType == Enum.UserInputType.Touch
+    or i.UserInputType == Enum.UserInputType.MouseMovement then
+        local dv = Vector2.new(i.Position.X,i.Position.Y) - _sp
+        openBtn.Position = UDim2.new(
+            _sf.X.Scale, _sf.X.Offset+dv.X,
+            _sf.Y.Scale, _sf.Y.Offset+dv.Y
+        )
+    end
+end)
+
+-- ── Main panel
+local panel = Instance.new("Frame")
+panel.Size             = UDim2.new(0, 280, 0, 310)
+panel.Position         = UDim2.new(0.5, -140, 0.5, -155)
+panel.BackgroundColor3 = Color3.fromRGB(14, 14, 22)
+panel.BorderSizePixel  = 0
+panel.ZIndex           = 998
+panel.Visible          = false
+panel.Active           = true
+panel.Parent           = sg
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+
+-- panel gradient
+local pg = Instance.new("UIGradient")
+pg.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 18, 30)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 18)),
+})
+pg.Rotation = 130
+pg.Parent   = panel
+
+-- panel drag
+local _pd,_psp,_psf=false,nil,nil
+panel.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseButton1 then
+        _pd=true _psp=Vector2.new(i.Position.X,i.Position.Y) _psf=panel.Position
+    end
+end)
+panel.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseButton1 then
+        _pd=false
+    end
+end)
+panel.InputChanged:Connect(function(i)
+    if not _pd or not _psp then return end
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseMovement then
+        local dv=Vector2.new(i.Position.X,i.Position.Y)-_psp
+        panel.Position=UDim2.new(_psf.X.Scale,_psf.X.Offset+dv.X,_psf.Y.Scale,_psf.Y.Offset+dv.Y)
+    end
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+    panel.Visible = not panel.Visible
+end)
+
+-- ── Header
+local hdr = Instance.new("Frame")
+hdr.Size             = UDim2.new(1, 0, 0, 48)
+hdr.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+hdr.BorderSizePixel  = 0
+hdr.ZIndex           = 999
+hdr.Parent           = panel
+Instance.new("UICorner", hdr).CornerRadius = UDim.new(0, 14)
+local hg = Instance.new("UIGradient")
+hg.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0,   Color3.fromRGB(165, 35, 35)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 20, 20)),
+    ColorSequenceKeypoint.new(1,   Color3.fromRGB(165, 35, 35)),
+})
+hg.Rotation = 90
+hg.Parent   = hdr
+
+local titleL = Instance.new("TextLabel")
+titleL.Size               = UDim2.new(0.78, 0, 1, 0)
+titleL.Position           = UDim2.new(0, 14, 0, 0)
+titleL.BackgroundTransparency = 1
+titleL.Text               = " GROWBLOX GOD"
+titleL.TextColor3         = Color3.fromRGB(255, 210, 210)
+titleL.TextSize           = 15
+titleL.Font               = Enum.Font.GothamBold
+titleL.TextXAlignment     = Enum.TextXAlignment.Left
+titleL.ZIndex             = 1000
+titleL.Parent             = hdr
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size             = UDim2.new(0, 32, 0, 32)
+closeBtn.Position         = UDim2.new(1, -40, 0.5, -16)
+closeBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+closeBtn.Text             = "X"
+closeBtn.TextColor3       = Color3.fromRGB(255, 160, 160)
+closeBtn.TextSize         = 13
+closeBtn.Font             = Enum.Font.GothamBold
+closeBtn.BorderSizePixel  = 0
+closeBtn.ZIndex           = 1001
+closeBtn.Parent           = hdr
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+closeBtn.MouseButton1Click:Connect(function()
+    panel.Visible = false
+end)
+
+local subL = Instance.new("TextLabel")
+subL.Size               = UDim2.new(1, 0, 0, 13)
+subL.Position           = UDim2.new(0, 0, 0, 48)
+subL.BackgroundTransparency = 1
+subL.Text               = "absolute ollie  built by olivia  discord.gg/ojailbreaks"
+subL.TextColor3         = Color3.fromRGB(90, 38, 38)
+subL.TextSize           = 9
+subL.Font               = Enum.Font.Gotham
+subL.ZIndex             = 999
+subL.Parent             = panel
+
+-- ── Toggle builder
+local TI = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function mkToggle(label, desc, key, yOff, onCol, cb)
+    onCol = onCol or Color3.fromRGB(205, 45, 45)
+
+    local row = Instance.new("Frame")
+    row.Size             = UDim2.new(1, -18, 0, 56)
+    row.Position         = UDim2.new(0, 9, 0, yOff)
+    row.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    row.BorderSizePixel  = 0
+    row.ZIndex           = 999
+    row.Parent           = panel
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+    local rg = Instance.new("UIGradient")
+    rg.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 34)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 13, 22)),
+    })
+    rg.Rotation = 90
+    rg.Parent   = row
+
+    -- left color bar
+    local bar = Instance.new("Frame")
+    bar.Size             = UDim2.new(0, 3, 0.6, 0)
+    bar.Position         = UDim2.new(0, 0, 0.2, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(50, 45, 70)
+    bar.BorderSizePixel  = 0
+    bar.ZIndex           = 1000
+    bar.Parent           = row
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size               = UDim2.new(0.65, 0, 0, 20)
+    lbl.Position           = UDim2.new(0, 14, 0, 7)
+    lbl.BackgroundTransparency = 1
+    lbl.Text               = label
+    lbl.TextColor3         = Color3.fromRGB(240, 235, 255)
+    lbl.TextSize           = 13
+    lbl.Font               = Enum.Font.GothamBold
+    lbl.TextXAlignment     = Enum.TextXAlignment.Left
+    lbl.ZIndex             = 1000
+    lbl.Parent             = row
+
+    local dsc = Instance.new("TextLabel")
+    dsc.Size               = UDim2.new(0.65, 0, 0, 13)
+    dsc.Position           = UDim2.new(0, 14, 0, 29)
+    dsc.BackgroundTransparency = 1
+    dsc.Text               = desc
+    dsc.TextColor3         = Color3.fromRGB(80, 70, 110)
+    dsc.TextSize           = 10
+    dsc.Font               = Enum.Font.Gotham
+    dsc.TextXAlignment     = Enum.TextXAlignment.Left
+    dsc.ZIndex             = 1000
+    dsc.Parent             = row
+
+    local track = Instance.new("Frame")
+    track.Size             = UDim2.new(0, 52, 0, 28)
+    track.Position         = UDim2.new(1, -60, 0.5, -14)
+    track.BackgroundColor3 = Color3.fromRGB(34, 30, 52)
+    track.BorderSizePixel  = 0
+    track.ZIndex           = 1000
+    track.Parent           = row
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+    local dot = Instance.new("Frame")
+    dot.Size             = UDim2.new(0, 22, 0, 22)
+    dot.Position         = UDim2.new(0, 3, 0.5, -11)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    dot.BorderSizePixel  = 0
+    dot.ZIndex           = 1001
+    dot.Parent           = track
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+    local btn = Instance.new("TextButton")
+    btn.Size               = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text               = ""
+    btn.ZIndex             = 1002
+    btn.Parent             = row
+
+    local function ref()
+        local on = S[key]
+        TweenService:Create(track, TI, {
+            BackgroundColor3 = on and onCol or Color3.fromRGB(34, 30, 52)
+        }):Play()
+        TweenService:Create(dot, TI, {
+            Position = on
+                and UDim2.new(0, 27, 0.5, -11)
+                or  UDim2.new(0, 3,  0.5, -11)
+        }):Play()
+        bar.BackgroundColor3 = on and onCol or Color3.fromRGB(50, 45, 70)
+    end
+    ref()
+
+    btn.MouseButton1Click:Connect(function()
+        S[key] = not S[key]
+        ref()
+        if cb then cb(S[key]) end
+    end)
+end
+
+-- ── Tele row
+local function mkTeleRow(yOff)
+    local row = Instance.new("Frame")
+    row.Size             = UDim2.new(1, -18, 0, 56)
+    row.Position         = UDim2.new(0, 9, 0, yOff)
+    row.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    row.BorderSizePixel  = 0
+    row.ZIndex           = 999
+    row.Parent           = panel
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+    local rg = Instance.new("UIGradient")
+    rg.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(16, 18, 36)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 24)),
+    })
+    rg.Rotation = 90
+    rg.Parent   = row
+
+    local bar = Instance.new("Frame")
+    bar.Size             = UDim2.new(0, 3, 0.6, 0)
+    bar.Position         = UDim2.new(0, 0, 0.2, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(50, 45, 70)
+    bar.BorderSizePixel  = 0
+    bar.ZIndex           = 1000
+    bar.Parent           = row
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size               = UDim2.new(0.4, 0, 0, 20)
+    lbl.Position           = UDim2.new(0, 14, 0, 7)
+    lbl.BackgroundTransparency = 1
+    lbl.Text               = "Teleport"
+    lbl.TextColor3         = Color3.fromRGB(150, 190, 255)
+    lbl.TextSize           = 13
+    lbl.Font               = Enum.Font.GothamBold
+    lbl.TextXAlignment     = Enum.TextXAlignment.Left
+    lbl.ZIndex             = 1000
+    lbl.Parent             = row
+
+    local coord = Instance.new("TextLabel")
+    coord.Size               = UDim2.new(0.6, 0, 0, 13)
+    coord.Position           = UDim2.new(0, 14, 0, 29)
+    coord.BackgroundTransparency = 1
+    coord.Text               = "tap Set to save position"
+    coord.TextColor3         = Color3.fromRGB(70, 90, 150)
+    coord.TextSize           = 9
+    coord.Font               = Enum.Font.Gotham
+    coord.TextXAlignment     = Enum.TextXAlignment.Left
+    coord.ZIndex             = 1000
+    coord.Parent             = row
+
+    local setB = Instance.new("TextButton")
+    setB.Size             = UDim2.new(0, 56, 0, 24)
+    setB.Position         = UDim2.new(1, -122, 0.5, -12)
+    setB.BackgroundColor3 = Color3.fromRGB(45, 80, 190)
+    setB.Text             = "Set"
+    setB.TextColor3       = Color3.fromRGB(255, 255, 255)
+    setB.TextSize         = 11
+    setB.Font             = Enum.Font.GothamSemibold
+    setB.BorderSizePixel  = 0
+    setB.ZIndex           = 1001
+    setB.Parent           = row
+    Instance.new("UICorner", setB).CornerRadius = UDim.new(0, 7)
+
+    local goB = Instance.new("TextButton")
+    goB.Size             = UDim2.new(0, 56, 0, 24)
+    goB.Position         = UDim2.new(1, -62, 0.5, -12)
+    goB.BackgroundColor3 = Color3.fromRGB(22, 170, 75)
+    goB.Text             = "Go"
+    goB.TextColor3       = Color3.fromRGB(255, 255, 255)
+    goB.TextSize         = 11
+    goB.Font             = Enum.Font.GothamSemibold
+    goB.BorderSizePixel  = 0
+    goB.ZIndex           = 1001
+    goB.Parent           = row
+    Instance.new("UICorner", goB).CornerRadius = UDim.new(0, 7)
+
+    setB.MouseButton1Click:Connect(function()
+        if root then
+            S.telePos = root.Position
+            coord.Text = string.format("X%.0f  Y%.0f  Z%.0f",
+                root.Position.X, root.Position.Y, root.Position.Z)
+            setB.BackgroundColor3 = Color3.fromRGB(22, 165, 70)
+            task.delay(0.5, function()
+                setB.BackgroundColor3 = Color3.fromRGB(45, 80, 190)
+            end)
+        end
+    end)
+
+    goB.MouseButton1Click:Connect(function()
+        if root and S.telePos then
+            pcall(function() root.CFrame = CFrame.new(S.telePos) end)
+        end
+    end)
+end
+
+-- ── Status bar
+local sbar = Instance.new("Frame")
+sbar.Size             = UDim2.new(1, 0, 0, 28)
+sbar.Position         = UDim2.new(0, 0, 1, -28)
+sbar.BackgroundColor3 = Color3.fromRGB(50, 12, 12)
+sbar.BorderSizePixel  = 0
+sbar.ZIndex           = 999
+sbar.Parent           = panel
+Instance.new("UICorner", sbar).CornerRadius = UDim.new(0, 14)
+
+local sL = Instance.new("TextLabel")
+sL.Size               = UDim2.new(1, -10, 1, 0)
+sL.Position           = UDim2.new(0, 10, 0, 0)
+sL.BackgroundTransparency = 1
+sL.Text               = "GOD MODE ON"
+sL.TextColor3         = Color3.fromRGB(220, 110, 110)
+sL.TextSize           = 10
+sL.Font               = Enum.Font.GothamBold
+sL.TextXAlignment     = Enum.TextXAlignment.Left
+sL.ZIndex             = 1000
+sL.Parent             = sbar
+
+-- ── Build toggles
+-- yOff starts at 65 (below header 48 + sub 13 + 4px gap)
+mkToggle(
+    "God Mode",
+    "Walk on Lava, Spikes — nothing kills you",
+    "god", 65,
+    Color3.fromRGB(205, 45, 45)
+)
+mkToggle(
+    "Noclip",
+    "Walk through walls and blocks",
+    "noclip", 129,
+    Color3.fromRGB(100, 65, 210)
+)
+mkTeleRow(193)
+
+-- ── Status ticker
+task.spawn(function()
+    while true do
+        task.wait(0.8)
+        local parts = {}
+        if S.god    then table.insert(parts, "GOD") end
+        if S.noclip then table.insert(parts, "NOCLIP") end
+        if S.tele   then table.insert(parts, "TELE") end
+        sL.Text = #parts > 0
+            and table.concat(parts, "  ")
+            or  "all off"
+        sL.TextColor3 = #parts > 0
+            and Color3.fromRGB(220, 110, 110)
+            or  Color3.fromRGB(80, 65, 110)
+    end
+end)
+
+print("[GB] ready -- tap RED circle in the CENTER of screen")
+print("[GB] discord.gg/ojailbreaks")
